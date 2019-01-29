@@ -2,14 +2,26 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
-RF24 radio(9, 10); // CE, CSN
+#define CE_PIN        9
+#define CSN_PIN       10
+#define RED_LED_PIN   2 
+#define BLUE_LED_PIN  3
+
+#define RED_LED   1 << 0
+#define BLUE_LED  1 << 1
+
+RF24 radio(CE_PIN, CSN_PIN);
 const byte address[6] = "00001";
-boolean button_state = 0;
-int led_pin = 3;
+
+uint8_t message;
+
 void setup() 
 {
-  pinMode(led_pin, OUTPUT);
+  pinMode(BLUE_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+
   Serial.begin(9600);
+
   radio.begin();
   radio.openReadingPipe(0, address);   //Setting the address at which we will receive the data
   radio.setPALevel(RF24_PA_MIN);       //You can set this as minimum or maximum depending on the distance between the transmitter and receiver.
@@ -19,20 +31,28 @@ void loop()
 {
   if (radio.available())              //Looking for the data.
   {
-    char text[32] = "";                 //Saving the incoming data
-    radio.read(&text, sizeof(text));    //Reading the data
-    radio.read(&button_state, sizeof(button_state));    //Reading the data
-    
-    if(button_state == HIGH)
+    //char text[32] = "";                 //Saving the incoming data
+    //radio.read(&text, sizeof(text));    //Reading the data
+    radio.read(&message, sizeof(message));    //Reading the data
+
+    if(message & RED_LED)
     {
-      digitalWrite(led_pin, HIGH);
-      Serial.println(text);
+      digitalWrite(RED_LED_PIN, HIGH);
     }
     else
     {
-      digitalWrite(led_pin, LOW);
-      Serial.println(text);
+      digitalWrite(RED_LED_PIN, LOW);
     }
+
+    if(message & BLUE_LED)
+    {
+      digitalWrite(BLUE_LED_PIN, HIGH);
+    }
+    else
+    {
+      digitalWrite(BLUE_LED_PIN, LOW);
+    }
+
   }
   delay(5);
 } 
