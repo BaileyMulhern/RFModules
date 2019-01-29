@@ -7,8 +7,8 @@
 #define BUTTON_ONE_PIN  2 
 #define BUTTON_TWO_PIN  3
 
-#define RED_LED   1 << 0
-#define BLUE_LED  1 << 1
+#define RED_LED   0
+#define BLUE_LED  1
 
 RF24 radio(CE_PIN, CSN_PIN);       
 const byte address[6] = "00001";     //Byte of array representing the address. This is the address where we will send the data. This should be same on the receiving side.
@@ -20,7 +20,9 @@ uint8_t message;
 void setup() 
 {
   pinMode(BUTTON_ONE_PIN, INPUT);
-  pinMode(BUTTON_TWO_PIN), INPUT);
+  pinMode(BUTTON_TWO_PIN, INPUT);
+
+  Serial.begin(9600);
  
   radio.begin();                  //Starting the Wireless communication
   radio.openWritingPipe(address); //Setting the address where we will send the data
@@ -33,10 +35,10 @@ void loop()
   
   button_one_state = digitalRead(BUTTON_ONE_PIN);
   button_two_state = digitalRead(BUTTON_TWO_PIN);
-g
+
   message |= button_one_state << RED_LED;
   message |= button_two_state << BLUE_LED;
-  
+
   radio.write(&message, sizeof(message));  //Sending the message to receiver 
   delay(5);
 }
