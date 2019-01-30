@@ -15,10 +15,18 @@
 #define RED_LED   1
 #define BLUE_LED  2
 
+#define RED_SHIFT   16
+#define GREEN_SHIFT 8
+#define BLUE_SHIFT  0
+
 RF24 radio(CE_PIN, CSN_PIN);
 const byte address[6] = "00001";
 
-uint8_t message;
+uint32_t message;
+void decode(uint32_t message);
+uint8_t red;
+uint8_t green;
+uint8_t blue;
 
 void setup() 
 {
@@ -28,6 +36,10 @@ void setup()
   pinMode(STRIP_RED_PIN, OUTPUT);
   pinMode(STRIP_GREEN_PIN, OUTPUT);
   pinMode(STRIP_BLUE_PIN, OUTPUT);
+
+  red = 0;
+  green = 0;
+  blue = 0;
 
   Serial.begin(9600);
 
@@ -47,28 +59,18 @@ void loop()
 
     //You need this delay dont ask me why
     delay(5);
-
-    if(message & RED_LED)
-    {
-      digitalWrite(RED_LED_PIN, HIGH);
-      analogWrite(STRIP_RED_PIN, 255);
-    }
-    else
-    {
-      digitalWrite(RED_LED_PIN, LOW);
-      analogWrite(STRIP_RED_PIN, 0);
-    }
-    
-    if(message & BLUE_LED)
-    {
-      digitalWrite(BLUE_LED_PIN, HIGH);
-      analogWrite(STRIP_BLUE_PIN, 255);
-    }
-    else
-    {
-      digitalWrite(BLUE_LED_PIN, LOW);
-      analogWrite(STRIP_BLUE_PIN, 0);
-    }
   }
+
+  analogWrite(STRIP_RED_PIN, red);
+  analogWrite(STRIP_GREEN_PIN, green);
+  analogWrite(STRIP_BLUE_PIN, blue);
+
   delay(5);
 } 
+
+void decode(uint32_t message)
+{
+  red = (uint8_t) (message >> RED_SHIFT);
+  green = (uint8_t) (message >> GREEN_SHIFT);
+  blue = (uint8_t) (message >> BLUE_SHIFT);
+}

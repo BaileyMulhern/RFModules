@@ -3,6 +3,7 @@
         {
             "name": "Win32",
             "includePath": [
+                "C:\\Users\\gecko\\Documents\\Programming\\Arduino\\libraries\\Adafruit_TLC59711",
                 "C:\\Users\\Bailey\\Documents\\Arduino\\libraries\\RF24",
                 "C:\\Program Files (x86)\\Arduino\\tools\\**",
                 "C:\\Program Files (x86)\\Arduino\\hardware\\arduino\\avr\\**"

@@ -7,8 +7,9 @@
 #define BUTTON_ONE_PIN  2 
 #define BUTTON_TWO_PIN  3
 
-#define RED_LED   0
-#define BLUE_LED  1
+#define RED_SHIFT   16
+#define GREEN_SHIFT 8
+#define BLUE_SHIFT  0
 
 RF24 radio(CE_PIN, CSN_PIN);       
 const byte address[6] = "00001";     //Byte of array representing the address. This is the address where we will send the data. This should be same on the receiving side.
@@ -36,8 +37,8 @@ void loop()
   button_one_state = digitalRead(BUTTON_ONE_PIN);
   button_two_state = digitalRead(BUTTON_TWO_PIN);
 
-  message |= button_one_state << RED_LED;
-  message |= button_two_state << BLUE_LED;
+  message |= (button_one_state * 0xFF) << RED_SHIFT;
+  message |= (button_two_state * 0xFF) << BLUE_SHIFT;
 
   radio.write(&message, sizeof(message));  //Sending the message to receiver 
   delay(5);
