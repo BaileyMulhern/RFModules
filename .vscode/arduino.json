@@ -1,5 +1,7 @@
 {
     "programmer": "AVRISP mkII",
-    "board": "arduino:avr:uno",
-    "port": "COM5"
+    "board": "arduino:avr:nano",
+    "port": "COM3",
+    "configuration": "cpu=atmega328old",
+    "sketch": "RFReceiver\\RFReceiver.ino"
 }
