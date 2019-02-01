@@ -3,5 +3,5 @@
     "board": "arduino:avr:nano",
     "port": "COM3",
     "configuration": "cpu=atmega328old",
-    "sketch": "RFReceiver\\RFReceiver.ino"
+    "sketch": "RFTransmitter\\RFTransmitter.ino"
 }
