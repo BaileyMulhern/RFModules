@@ -11,204 +11,253 @@
 #define GREEN_SHIFT 8
 #define BLUE_SHIFT  0
 
-#define LED_MAX 255
+#define LED_MAX     255
+#define LOOP_DELAY  1
+
+
+
+const uint8_t address_book[20][6] = {
+  "00001", "00002", "00003", "00004", "00005",
+  "00006", "00007", "00008", "00009", "00010",
+  "00011", "00012", "00013", "00014", "00015",
+  "00016", "00017", "00018", "00019", "00020",
+};
 
 RF24 radio(CE_PIN, CSN_PIN);       
-const byte address[6] = "00001";     //Byte of array representing the address. This is the address where we will send the data. This should be same on the receiving side.
-boolean button_one_state = 0;
-boolean button_two_state = 0;
-
-uint32_t message;
-void encode(uint32_t *message);
-uint8_t g_red;
-uint8_t g_green;
-uint8_t g_blue;
-
-int count;
-int count_step;
-int count_max;
-int wait;
 
 
 
 class Timer {
   private:
-    uint64_t wait;
-    uint64_t last_tic;
-    uint16_t count;           //Counter variable to keep track of where in the effect the task is
-    uint16_t count_max;       //Max number of counts before the counter rolls over
-    uint16_t count_step;      //Amount the counter increases each time its incremented
-    uint16_t count_overflow;  //Value that the counter overflows to 
+    uint16_t _count;           
+    uint16_t _step;       
+    uint16_t _max;      
+    uint16_t _overflow;
+    uint64_t _wait;
+    uint64_t _last;   
     
   public:
-    Timer(uint64_t wait, uint16_t count, uint16_t count_max, uint16_t count_step, uint16_t count_overflow);
+    Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uint64_t wait);
+    ~Timer();
     uint16_t tic(uint64_t curr_ms);
 };
+
+
 
 typedef enum {
   OFF = 0,
   IDLE = 1,
-  TEST = 2,
 }strip_state_t;
 
 class LedStrip {
   private:
-    uint8_t address[6];
-    uint32_t packet;
-    strip_state_t state;
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint16_t count;
-    Timer *counter;
+    static uint8_t s_address_counter;
 
-    void off();
+    uint8_t _address;
+    strip_state_t _state;
+    uint8_t _red;
+    uint8_t _green;
+    uint8_t _blue;
+    uint16_t _count;
+    Timer *_timer;
+
     void idle();
-    void test();
+
   public:
-    LedStrip(const uint8_t *address[6]);
+    LedStrip(strip_state_t state);
     ~LedStrip();
     uint32_t getPacket();
     void setState(strip_state_t state);
-    void update();
+    void update(uint64_t curr_ms);
 };
+
+uint8_t LedStrip::s_address_counter = 0;
+
+
+
+void sendMessage(uint8_t address, uint32_t message);
+
+uint64_t g_curr_ms = 0;
+LedStrip* strips[20];
+int g_num_strips = 0;
+
+boolean g_button_one_state;
+
 
 void setup() 
 {
-  //pinMode(BUTTON_ONE_PIN, INPUT);
-  //pinMode(BUTTON_TWO_PIN, INPUT);
-  
-  g_red = 0;
-  g_green = 0;
-  g_blue = 0;
+  pinMode(BUTTON_ONE_PIN, INPUT);
 
-  count = 0;
-  count_step = 1;
-  count_max = 256;
-  wait = 50;
+  strips[g_num_strips++] = new LedStrip(OFF);
 
   Serial.begin(9600);
  
   radio.begin();                  //Starting the Wireless communication
-  radio.openWritingPipe(address); //Setting the address where we will send the data
   radio.setPALevel(RF24_PA_MIN);  //You can set it as minimum or maximum depending on the distance between the transmitter and receiver.
-  radio.stopListening();          //This sets the module as transmitter
+  radio.stopListening();
 }
 
 void loop()
-{
-  message = 0;
-  
-  //button_one_state = digitalRead(BUTTON_ONE_PIN);
-  //button_two_state = digitalRead(BUTTON_TWO_PIN);
+{  
+  g_curr_ms = millis();
 
-  //message |= (uint32_t) button_one_state * 0xFF << RED_SHIFT;
-  //message |= (uint32_t) button_two_state * 0xFF << BLUE_SHIFT;
+  g_button_one_state = digitalRead(BUTTON_ONE_PIN);
+  strips[0]->setState((strip_state_t) g_button_one_state);
 
-  Wheel(count);
-
-  encode(&message);
-  Serial.println(message, HEX);
-
-  Serial.print(g_red, HEX);
-  Serial.print("\t");
-  Serial.print(g_green, HEX);
-  Serial.print("\t");
-  Serial.print(g_blue, HEX);
-  Serial.println();
-
-  radio.write(&message, sizeof(message));  //Sending the message to receiver 
-
-  count += count_step;
-  if(count >= count_max)
+  for(int i = 0; i < g_num_strips; i++)
   {
-    count = 0;
+    strips[i]->update(g_curr_ms);
   }
-  delay(wait);
+
+  delay(LOOP_DELAY);
 }
 
-Timer::Timer(uint64_t wait, uint16_t count, uint16_t count_max, uint16_t count_step, uint16_t count_overflow)
+
+
+Timer::Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uint64_t wait)
 {
-  this->count = count;
-  this->count_max = count_max;
-  this->count_step = count_step;
-  this->count_overflow = count_overflow;
-  this->wait = millis();
+  _count = count;
+  _step = step;
+  _max = max;
+  _overflow = overflow;
+  _wait = wait;
+  _last = millis();
+}
+
+Timer::~Timer()
+{
+  return;
 }
     
 uint16_t Timer::tic(uint64_t curr_ms)
 {
-  if(this->count_step != 0 && curr_ms - this->last_tic >= this->wait)
+  if(_step != 0 && curr_ms - _last >= _wait)
   {
-    this->last_tic = curr_ms;
-    this->count += this->count_step;
-    if(this->count >= this->count_max)
+    _last = curr_ms;
+    _count += _step;
+    if(_count >= _max)
     {
-      this->count = this->count_overflow;
+      _count = _overflow;
     }
   }
 
-  return this->count;
+  return _count;
 }
 
-LedStrip::LedStrip(const uint8_t *address[6])
-{
-  this->address = *address;
-  this->packet = 0;
-  this->red;
-  this->green;
-  this->blue;
-  this->count;
-  this->counter = new Timer(0,0,0,0,0);
 
-  setState(strip_state_t::OFF);
+
+LedStrip::LedStrip(strip_state_t state = OFF)
+{
+  _address = s_address_counter;
+  s_address_counter++;
+  _state = state;
+  _red = 0;
+  _green = 0;
+  _blue = 0;
+  _count;
+  _timer = NULL;
+
+  setState(_state);
 }
     
-LedStrip::~LedStrip
+LedStrip::~LedStrip()
 {
-  if(counter != NULL)
+  delete _timer;
+}
+
+void LedStrip::idle()
+{
+  Wheel(_count, &_red, &_green, &_blue);
+}
+
+uint32_t LedStrip::getPacket()
+{
+  uint32_t packet = 0;
+
+  packet |= (uint32_t)_red << RED_SHIFT;
+  packet |= (uint32_t)_green << GREEN_SHIFT;
+  packet |= (uint32_t)_blue << BLUE_SHIFT;
+
+  return packet;
+}
+
+void LedStrip::setState(strip_state_t state)
+{
+  switch (state)
   {
-    delete counter;
+    case OFF:
+      _state = state;
+
+      _red = 0;
+      _green = 0;
+      _blue = 0;
+
+      delete _timer;
+      _timer = new Timer(0,0,0,0,0);
+      break;
+
+    case IDLE:
+      _state = state;
+
+      delete _timer;
+      _timer = new Timer(0,1,256,0,10);
+      break;
+
+    default:
+      break;
   }
 }
 
-uint32_t LedStrip::getPacket();
-
-void LedStrip::update();
-
-void encode(uint32_t *message)
+void LedStrip::update(uint64_t curr_ms)
 {
-  uint32_t temp = 0;
-  temp |= (uint32_t)g_red << RED_SHIFT;
-  temp |= (uint32_t)g_green << GREEN_SHIFT;
-  temp |= (uint32_t)g_blue << BLUE_SHIFT;
-  *message = temp;
+  switch (_state)
+  {
+    case OFF:
+      break;
+
+    case IDLE:
+      idle();
+      break;
+
+    default:
+      break;
+  }
+
+  _count = _timer->tic(curr_ms);
+}
+
+
+
+void sendMessage(uint8_t address, uint32_t message)
+{
+  radio.openWritingPipe(address_book[address]);
+  radio.write(&message, sizeof(message)); 
 }
 
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
-void Wheel(uint8_t p) 
+void Wheel(uint8_t p, uint8_t *r, uint8_t *g, uint8_t *b) 
 {
   p = 255 - p;
   
   if(p < 85) 
   {
-    g_red = LED_MAX - p * 3;
-    g_green = 0;
-    g_blue = p * 3;
+    *r = LED_MAX - p * 3;
+    *g = 0;
+    *b = p * 3;
   }
   else if(p < 170) 
   {
     p -= 85;
-    g_red = 0;
-    g_green = p * 3;
-    g_blue = LED_MAX - p * 3;
+    *r = 0;
+    *g = p * 3;
+    *b = LED_MAX - p * 3;
   }
   else
   {
     p -= 170;
-    g_red = p * 3;
-    g_green = LED_MAX - p * 3;
-    g_blue = 0;
+    *r = p * 3;
+    *g = LED_MAX - p * 3;
+    *b = 0;
   }
 }

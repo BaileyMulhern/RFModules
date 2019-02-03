@@ -1,7 +1,6 @@
 {
     "programmer": "AVRISP mkII",
-    "board": "arduino:avr:nano",
+    "board": "arduino:avr:uno",
     "port": "COM3",
-    "configuration": "cpu=atmega328old",
     "sketch": "RFTransmitter\\RFTransmitter.ino"
 }
