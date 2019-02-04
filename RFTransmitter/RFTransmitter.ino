@@ -2,6 +2,25 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
+/* Gamma Correction Table */
+const uint8_t PROGMEM gammaTable[] = {
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+  2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+  5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+  10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+  17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+  25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+  37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+  51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+  69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+  90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
+
 #define CE_PIN          9
 #define CSN_PIN         10
 #define BUTTON_ONE_PIN  2 
@@ -58,14 +77,16 @@ class LedStrip {
     uint8_t _red;
     uint8_t _green;
     uint8_t _blue;
-    uint16_t _count;
+    //uint16_t _count;
     Timer *_timer;
 
     void idle();
 
   public:
+  uint16_t _count;
     LedStrip(strip_state_t state);
     ~LedStrip();
+    uint8_t getAddress();
     uint32_t getPacket();
     void setState(strip_state_t state);
     void update(uint64_t curr_ms);
@@ -95,20 +116,23 @@ void setup()
   radio.begin();                  //Starting the Wireless communication
   radio.setPALevel(RF24_PA_MIN);  //You can set it as minimum or maximum depending on the distance between the transmitter and receiver.
   radio.stopListening();
+
+  strips[0]->setState(IDLE);
 }
 
 void loop()
 {  
   g_curr_ms = millis();
 
-  g_button_one_state = digitalRead(BUTTON_ONE_PIN);
-  strips[0]->setState((strip_state_t) g_button_one_state);
+  // = digitalRead(BUTTON_ONE_PIN);
+  
 
   for(int i = 0; i < g_num_strips; i++)
   {
     strips[i]->update(g_curr_ms);
   }
-
+  
+  sendMessage(strips[0]->getAddress(), strips[0]->getPacket());
   delay(LOOP_DELAY);
 }
 
@@ -170,9 +194,18 @@ void LedStrip::idle()
   Wheel(_count, &_red, &_green, &_blue);
 }
 
+uint8_t LedStrip::getAddress()
+{
+  return _address;
+}
+
 uint32_t LedStrip::getPacket()
 {
   uint32_t packet = 0;
+
+  _red = pgm_read_byte(&gammaTable[_red]);
+  _green = pgm_read_byte(&gammaTable[_green]);
+  _blue = pgm_read_byte(&gammaTable[_blue]);
 
   packet |= (uint32_t)_red << RED_SHIFT;
   packet |= (uint32_t)_green << GREEN_SHIFT;
@@ -200,7 +233,7 @@ void LedStrip::setState(strip_state_t state)
       _state = state;
 
       delete _timer;
-      _timer = new Timer(0,1,256,0,10);
+      _timer = new Timer(0,1,256,0,50);
       break;
 
     default:
