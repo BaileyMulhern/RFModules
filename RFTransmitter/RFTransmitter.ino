@@ -1,3 +1,4 @@
+#include <FastLED.h>
 #include <SPI.h>
 #include <nRF24L01.h>
 #include <RF24.h>
@@ -30,8 +31,9 @@ const uint8_t PROGMEM gammaTable[] = {
 #define GREEN_SHIFT 8
 #define BLUE_SHIFT  0
 
-#define LED_MAX     255
-#define LOOP_DELAY  1
+#define LED_MAX         255
+#define LOOP_DELAY      1
+#define DEBOUNCE_DELAY  50
 
 
 
@@ -66,6 +68,7 @@ class Timer {
 typedef enum {
   OFF = 0,
   IDLE = 1,
+  NUM_STATES = 2,
 }strip_state_t;
 
 class LedStrip {
@@ -97,12 +100,18 @@ uint8_t LedStrip::s_address_counter = 0;
 
 
 void sendMessage(uint8_t address, uint32_t message);
+void readButton();
 
 uint64_t g_curr_ms = 0;
 LedStrip* strips[20];
 int g_num_strips = 0;
 
-boolean g_button_one_state;
+boolean g_curr_button_state = 0;
+boolean g_last_button_state = 0;
+boolean g_button_unpressed = 0;
+uint64_t g_last_button_debounce;
+uint8_t g_curr_effect;
+
 
 
 void setup() 
@@ -117,16 +126,24 @@ void setup()
   radio.setPALevel(RF24_PA_MIN);  //You can set it as minimum or maximum depending on the distance between the transmitter and receiver.
   radio.stopListening();
 
-  strips[0]->setState(IDLE);
+  g_curr_effect = 0;
+  strips[0]->setState(g_curr_effect);
 }
 
 void loop()
 {  
   g_curr_ms = millis();
 
-  // = digitalRead(BUTTON_ONE_PIN);
+  readButton();
   
-
+  if(g_button_unpressed)
+  {
+    g_button_unpressed = 0;
+    g_curr_effect++;
+    g_curr_effect = g_curr_effect % NUM_STATES;
+    strips[0]->setState(g_curr_effect);
+  }
+  
   for(int i = 0; i < g_num_strips; i++)
   {
     strips[i]->update(g_curr_ms);
@@ -265,6 +282,33 @@ void sendMessage(uint8_t address, uint32_t message)
 {
   radio.openWritingPipe(address_book[address]);
   radio.write(&message, sizeof(message)); 
+}
+
+void readButton()
+{
+  boolean reading = digitalRead(BUTTON_ONE_PIN);
+
+  if (reading != g_last_button_state) 
+  {
+    g_last_button_debounce = millis();
+  }
+
+  if ((millis() - g_last_button_debounce) > DEBOUNCE_DELAY) 
+  {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading != g_curr_button_state) 
+    {
+      g_curr_button_state = reading;
+
+      //If the button was pressed and now is unpressed, then set the g_button_unpressed flag
+      g_button_unpressed = !g_curr_button_state;
+    }
+  }
+
+  g_last_button_state = reading;
 }
 
 // Input a value 0 to 255 to get a color value.
