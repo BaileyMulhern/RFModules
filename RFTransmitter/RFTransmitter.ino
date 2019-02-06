@@ -374,7 +374,7 @@ void LedStrip::rgbSine()
 
   if(_count < BYTE_MAX)
   {
-		_color.r = sin8(_count);
+		_color.r = cos8(_count);
   }
 	else if(_count < 2 * BYTE_MAX)
 	{
@@ -382,7 +382,7 @@ void LedStrip::rgbSine()
 	}
 	else
 	{
-		_color.b = sin8(_count % BYTE_MAX);
+		_color.b = cos8(_count % BYTE_MAX);
 	}
 }
 
