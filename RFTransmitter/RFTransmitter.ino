@@ -167,7 +167,7 @@ void loop()
     strips[i]->update(g_curr_ms);
   }
 
-  Serial.println(strips[0]->getPacket(), HEX);
+  //Serial.println(strips[0]->getPacket(), HEX);
   
   //Send the color out to the receiver
   sendMessage(strips[0]->getAddress(), strips[0]->getPacket());
