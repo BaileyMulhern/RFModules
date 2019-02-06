@@ -3,6 +3,18 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
+#define CE_PIN      9
+#define CSN_PIN     10
+#define BUTTON_PIN  2 
+
+#define RED_SHIFT   16
+#define GREEN_SHIFT 8
+#define BLUE_SHIFT  0
+
+#define LED_MAX         255
+#define LOOP_DELAY      1
+#define DEBOUNCE_DELAY  50
+
 /* Gamma Correction Table */
 const uint8_t PROGMEM gammaTable[] = {
   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -22,40 +34,27 @@ const uint8_t PROGMEM gammaTable[] = {
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
   215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
-#define CE_PIN          9
-#define CSN_PIN         10
-#define BUTTON_ONE_PIN  2 
-#define BUTTON_TWO_PIN  3
-
-#define RED_SHIFT   16
-#define GREEN_SHIFT 8
-#define BLUE_SHIFT  0
-
-#define LED_MAX         255
-#define LOOP_DELAY      1
-#define DEBOUNCE_DELAY  50
-
-
-
 const uint8_t address_book[20][6] = {
   "00001", "00002", "00003", "00004", "00005",
   "00006", "00007", "00008", "00009", "00010",
   "00011", "00012", "00013", "00014", "00015",
   "00016", "00017", "00018", "00019", "00020",
-};
-
-RF24 radio(CE_PIN, CSN_PIN);       
+};      
 
 
-
+/*****************************************************************
+ * Timer Class
+ * 
+ * Responsible for incrementing the counter after the given wait
+ */
 class Timer {
   private:
-    uint16_t _count;           
-    uint16_t _step;       
-    uint16_t _max;      
-    uint16_t _overflow;
-    uint64_t _wait;
-    uint64_t _last;   
+    uint16_t _count;    //Counter value
+    uint16_t _step;     //Value that the counter is incremented by each period
+    uint16_t _max;      //Upper bound of the counter
+    uint16_t _overflow; //Value that the counter is set to once it overflows
+    uint64_t _wait;     //Wait time in milliseconds between counter increments
+    uint64_t _last;     //Time in milliseconds since the timer last ticked
     
   public:
     Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uint64_t wait);
@@ -64,29 +63,35 @@ class Timer {
 };
 
 
-
+/*****************************************************************
+ * Strip State Enum
+ * 
+ * Enum for each effect possible for the LED strips
+ */
 typedef enum {
   OFF = 0,
-  IDLE = 1,
+  RAINBOW = 1,
   NUM_STATES = 2,
 }strip_state_t;
 
+/*****************************************************************
+ * LedStrip Class
+ * 
+ * Class for each led strip to be transmitted to by the radio
+ */
 class LedStrip {
   private:
-    static uint8_t s_address_counter;
+    static uint8_t s_address_counter; //The current total number of RF addresses
 
-    uint8_t _address;
-    strip_state_t _state;
-    uint8_t _red;
-    uint8_t _green;
-    uint8_t _blue;
-    //uint16_t _count;
-    Timer *_timer;
+    uint8_t _address;                 //The RF address of the strip
+    strip_state_t _state;             //The current effect state of the strip
+    CRGB _color;                      //The color of the strip
+    uint16_t _count;                  //Current counter value of the timer
+    Timer *_timer;                    //The strips internal timer
 
-    void idle();
+    void rainbow();
 
   public:
-  uint16_t _count;
     LedStrip(strip_state_t state);
     ~LedStrip();
     uint8_t getAddress();
@@ -95,66 +100,91 @@ class LedStrip {
     void update(uint64_t curr_ms);
 };
 
+//Initialize the number of addresses to 0
 uint8_t LedStrip::s_address_counter = 0;
 
-
-
+//Helper Functions
 void sendMessage(uint8_t address, uint32_t message);
 void readButton();
 
-uint64_t g_curr_ms = 0;
-LedStrip* strips[20];
-int g_num_strips = 0;
+//Initialize the RF module
+RF24 radio(CE_PIN, CSN_PIN); 
 
-boolean g_curr_button_state = 0;
-boolean g_last_button_state = 0;
-boolean g_button_unpressed = 0;
-uint64_t g_last_button_debounce;
-uint8_t g_curr_effect;
+//Initialize global variables
+uint64_t g_curr_ms = 0; //current milliseconds
+
+LedStrip* strips[20];       //Array of all of the LED strips
+uint8_t g_num_strips = 0;   //Number of LED strips
+uint8_t g_curr_effect = 0;  //Integer value of the current effect 
+
+boolean g_curr_button_state = 0;  //Current button state
+boolean g_last_button_state = 0;  //Previous button state
+boolean g_button_unpressed = 0;   //Flag for when the button has been unpressed
+uint64_t g_last_button_debounce;  //Milliseconds since the button was last debounced
 
 
 
 void setup() 
 {
-  pinMode(BUTTON_ONE_PIN, INPUT);
+  //Setup the button
+  pinMode(BUTTON_PIN, INPUT);
 
+  //Initialize all of the LED strips
   strips[g_num_strips++] = new LedStrip(OFF);
-
-  Serial.begin(9600);
+  strips[0]->setState(g_curr_effect);
  
+  //Setup the RF transmitter
   radio.begin();                  //Starting the Wireless communication
   radio.setPALevel(RF24_PA_MIN);  //You can set it as minimum or maximum depending on the distance between the transmitter and receiver.
   radio.stopListening();
 
-  g_curr_effect = 0;
-  strips[0]->setState(g_curr_effect);
+  //Start serial line
+  Serial.begin(9600);
 }
 
 void loop()
-{  
+{ 
+  //Update the current time 
   g_curr_ms = millis();
 
+  //Read from the button
   readButton();
-  
+  //If the button is unpressed, increment through the effects
   if(g_button_unpressed)
   {
+    //Reset the unpressed flag
     g_button_unpressed = 0;
+    //Increment the effect
     g_curr_effect++;
     g_curr_effect = g_curr_effect % NUM_STATES;
+    //Update the current state of the strip
     strips[0]->setState(g_curr_effect);
   }
   
+  //Iterate through all of the strips and update them all
   for(int i = 0; i < g_num_strips; i++)
   {
     strips[i]->update(g_curr_ms);
   }
+
+  Serial.println(strips[0]->getPacket(), HEX);
   
+  //Send the color out to the receiver
   sendMessage(strips[0]->getAddress(), strips[0]->getPacket());
+
+
   delay(LOOP_DELAY);
 }
 
 
 
+/*****************************************************************
+ * Timer Methods
+ */
+
+/*
+ * Timer Constructor
+ */
 Timer::Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uint64_t wait)
 {
   _count = count;
@@ -165,6 +195,9 @@ Timer::Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uin
   _last = millis();
 }
 
+/*
+ * Timer Deconstructor
+ */
 Timer::~Timer()
 {
   return;
@@ -187,50 +220,81 @@ uint16_t Timer::tic(uint64_t curr_ms)
 
 
 
+/*****************************************************************
+ * LedStrip Methods
+ */
+
+/*
+ * LedStrip Constructor
+ */
 LedStrip::LedStrip(strip_state_t state = OFF)
 {
-  _address = s_address_counter;
-  s_address_counter++;
+  _address = s_address_counter++;
   _state = state;
-  _red = 0;
-  _green = 0;
-  _blue = 0;
-  _count;
+  _color = CRGB::Black;
   _timer = NULL;
 
   setState(_state);
 }
-    
+
+/* 
+ * LedStrip()
+ *
+ * LedStrip Deconstructor
+ */
 LedStrip::~LedStrip()
 {
   delete _timer;
 }
 
-void LedStrip::idle()
+/*
+ * rainbow()
+ * 
+ * Cycles through the rainbow based on the value of _count
+ * 
+ * 	_count		0
+ *  _step		1
+ *  _max		256
+ * 	_overflow	0
+ * 	_wait		50
+ */
+void LedStrip::rainbow()
 {
-  Wheel(_count, &_red, &_green, &_blue);
+  _color = CHSV((uint8_t)_count, LED_MAX, LED_MAX);
 }
 
+/* 
+ * getAddress()
+ *
+ * Returns the address of the strip 
+ */
 uint8_t LedStrip::getAddress()
 {
   return _address;
 }
 
+/* 
+ * getPacket()
+ *
+ * Returns the 32 bit RGB color of the strip
+ */
 uint32_t LedStrip::getPacket()
 {
   uint32_t packet = 0;
 
-  _red = pgm_read_byte(&gammaTable[_red]);
-  _green = pgm_read_byte(&gammaTable[_green]);
-  _blue = pgm_read_byte(&gammaTable[_blue]);
-
-  packet |= (uint32_t)_red << RED_SHIFT;
-  packet |= (uint32_t)_green << GREEN_SHIFT;
-  packet |= (uint32_t)_blue << BLUE_SHIFT;
+  packet |= (uint32_t)_color.r << RED_SHIFT;
+  packet |= (uint32_t)_color.g << GREEN_SHIFT;
+  packet |= (uint32_t)_color.b << BLUE_SHIFT;
 
   return packet;
 }
 
+/* 
+ * setState()
+ *
+ * Transitions the strip to the given state, setting the
+ * initial conditions for the state 
+ */
 void LedStrip::setState(strip_state_t state)
 {
   switch (state)
@@ -238,15 +302,13 @@ void LedStrip::setState(strip_state_t state)
     case OFF:
       _state = state;
 
-      _red = 0;
-      _green = 0;
-      _blue = 0;
+      _color = CRGB::Black;
 
       delete _timer;
       _timer = new Timer(0,0,0,0,0);
       break;
 
-    case IDLE:
+    case RAINBOW:
       _state = state;
 
       delete _timer;
@@ -258,35 +320,54 @@ void LedStrip::setState(strip_state_t state)
   }
 }
 
+/* 
+ * update()
+ *
+ * Updates the strip based on the current time and state
+ */
 void LedStrip::update(uint64_t curr_ms)
 {
+	//Update the current counter value
+	_count = _timer->tic(curr_ms);
+
+	//Run the effect method corresponding to the current state
   switch (_state)
   {
     case OFF:
       break;
 
-    case IDLE:
-      idle();
+    case RAINBOW:
+      rainbow();
       break;
 
     default:
       break;
   }
-
-  _count = _timer->tic(curr_ms);
 }
 
 
 
+/* 
+ * sendMessage()
+ *
+ * Sends the given package to the given address
+ */
 void sendMessage(uint8_t address, uint32_t message)
 {
   radio.openWritingPipe(address_book[address]);
   radio.write(&message, sizeof(message)); 
 }
 
+/* 
+ * readButton()
+ *
+ * Reads the state of the button with debounce, tripping 
+ * the unpressed flag if the button goes from pressed to
+ * unpressed
+ */
 void readButton()
 {
-  boolean reading = digitalRead(BUTTON_ONE_PIN);
+  boolean reading = digitalRead(BUTTON_PIN);
 
   if (reading != g_last_button_state) 
   {
@@ -313,7 +394,7 @@ void readButton()
 
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
-void Wheel(uint8_t p, uint8_t *r, uint8_t *g, uint8_t *b) 
+/*void Wheel(uint8_t p, uint8_t *r, uint8_t *g, uint8_t *b) 
 {
   p = 255 - p;
   
@@ -337,4 +418,4 @@ void Wheel(uint8_t p, uint8_t *r, uint8_t *g, uint8_t *b)
     *g = LED_MAX - p * 3;
     *b = 0;
   }
-}
+}*/
