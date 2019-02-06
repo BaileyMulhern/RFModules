@@ -12,6 +12,7 @@
 #define BLUE_SHIFT  0
 
 #define LED_MAX         255
+#define BYTE_MAX        256
 #define LOOP_DELAY      1
 #define DEBOUNCE_DELAY  50
 
@@ -71,7 +72,8 @@ class Timer {
 typedef enum {
   OFF = 0,
   RAINBOW = 1,
-  NUM_STATES = 2,
+  RGB_SINE = 2,
+  NUM_STATES = 3,
 }strip_state_t;
 
 /*****************************************************************
@@ -90,6 +92,7 @@ class LedStrip {
     Timer *_timer;                    //The strips internal timer
 
     void rainbow();
+    void rgbSine();
 
   public:
     LedStrip(strip_state_t state);
@@ -166,8 +169,11 @@ void loop()
   {
     strips[i]->update(g_curr_ms);
   }
+<<<<<<< HEAD
 
   //Serial.println(strips[0]->getPacket(), HEX);
+=======
+>>>>>>> 282df3f492749ad032d6af6f14d035c9a300b482
   
   //Send the color out to the receiver
   sendMessage(strips[0]->getAddress(), strips[0]->getPacket());
@@ -253,14 +259,43 @@ LedStrip::~LedStrip()
  * Cycles through the rainbow based on the value of _count
  * 
  * 	_count		0
- *  _step		1
- *  _max		256
- * 	_overflow	0
- * 	_wait		50
+ *  _step		  1
+ *  _max		  256
+ * 	_overflow 0
+ * 	_wait		  50
  */
 void LedStrip::rainbow()
 {
   _color = CHSV((uint8_t)_count, LED_MAX, LED_MAX);
+}
+
+/*
+ * rgbSine()
+ * 
+ * Pulses through a sine wave in red, green, and blue
+ * 
+ * 	_count		0
+ *  _step		  1
+ *  _max		  768
+ * 	_overflow	0
+ * 	_wait		  25
+ */
+void LedStrip::rgbSine()
+{
+	_color = CRGB::Black;
+
+  if(_count < BYTE_MAX)
+  {
+		_color.r = quadwave8(_count);
+  }
+	else if(_count < 2 * BYTE_MAX)
+	{
+		_color.g = quadwave8(_count % BYTE_MAX);
+	}
+	else
+	{
+		_color.b = quadwave8(_count % BYTE_MAX);
+	}
 }
 
 /* 
@@ -312,7 +347,14 @@ void LedStrip::setState(strip_state_t state)
       _state = state;
 
       delete _timer;
-      _timer = new Timer(0,1,256,0,50);
+      _timer = new Timer(0,1,BYTE_MAX,0,50);
+      break;
+
+		case RGB_SINE:
+      _state = state;
+
+      delete _timer;
+      _timer = new Timer(0,1,3 * BYTE_MAX,0,25);
       break;
 
     default:
@@ -338,6 +380,10 @@ void LedStrip::update(uint64_t curr_ms)
 
     case RAINBOW:
       rainbow();
+      break;
+
+		case RGB_SINE:
+      rgbSine();
       break;
 
     default:
@@ -392,30 +438,4 @@ void readButton()
   g_last_button_state = reading;
 }
 
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-/*void Wheel(uint8_t p, uint8_t *r, uint8_t *g, uint8_t *b) 
-{
-  p = 255 - p;
-  
-  if(p < 85) 
-  {
-    *r = LED_MAX - p * 3;
-    *g = 0;
-    *b = p * 3;
-  }
-  else if(p < 170) 
-  {
-    p -= 85;
-    *r = 0;
-    *g = p * 3;
-    *b = LED_MAX - p * 3;
-  }
-  else
-  {
-    p -= 170;
-    *r = p * 3;
-    *g = LED_MAX - p * 3;
-    *b = 0;
-  }
-}*/
+
