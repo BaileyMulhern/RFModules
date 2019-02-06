@@ -72,8 +72,11 @@ class Timer {
 typedef enum {
   OFF = 0,
   RAINBOW = 1,
-  RGB_SINE = 2,
-  NUM_STATES = 3,
+  RGB_TRI = 2,
+	RGB_QUAD = 3,
+	RGB_CUBIC = 4,
+	RGB_SINE = 5,
+  NUM_STATES = 6,
 }strip_state_t;
 
 /*****************************************************************
@@ -92,7 +95,10 @@ class LedStrip {
     Timer *_timer;                    //The strips internal timer
 
     void rainbow();
-    void rgbSine();
+    void rgbTri();
+		void rgbQuad();
+		void rgbCubic();
+		void rgbSine();
 
   public:
     LedStrip(strip_state_t state);
@@ -265,17 +271,46 @@ void LedStrip::rainbow()
 }
 
 /*
- * rgbSine()
+ * rgbTri()
  * 
- * Pulses through a sine wave in red, green, and blue
+ * Pulses through a triangle wave in red, green, and blue
  * 
  * 	_count		0
- *  _step		  1
+ *  _step		  3
  *  _max		  768
  * 	_overflow	0
- * 	_wait		  25
+ * 	_wait		  10
  */
-void LedStrip::rgbSine()
+void LedStrip::rgbTri()
+{
+	_color = CRGB::Black;
+
+  if(_count < BYTE_MAX)
+  {
+		_color.r = triwave8(_count);
+  }
+	else if(_count < 2 * BYTE_MAX)
+	{
+		_color.g = triwave8(_count % BYTE_MAX);
+	}
+	else
+	{
+		_color.b = triwave8(_count % BYTE_MAX);
+	}
+}
+
+/*
+ * rgbQuad()
+ * 
+ * Pulses through a quadratic wave in red, green, and blue
+ * 
+ * 	_count		0
+ *  _step		  3
+ *  _max		  768
+ * 	_overflow	0
+ * 	_wait		  10
+ */
+void LedStrip::rgbQuad()
 {
 	_color = CRGB::Black;
 
@@ -290,6 +325,64 @@ void LedStrip::rgbSine()
 	else
 	{
 		_color.b = quadwave8(_count % BYTE_MAX);
+	}
+}
+
+/*
+ * rgbCubic()
+ * 
+ * Pulses through a cubic wave in red, green, and blue
+ * 
+ * 	_count		0
+ *  _step		  3
+ *  _max		  768
+ * 	_overflow	0
+ * 	_wait		  10
+ */
+void LedStrip::rgbCubic()
+{
+	_color = CRGB::Black;
+
+  if(_count < BYTE_MAX)
+  {
+		_color.r = cubicwave8(_count);
+  }
+	else if(_count < 2 * BYTE_MAX)
+	{
+		_color.g = cubicwave8(_count % BYTE_MAX);
+	}
+	else
+	{
+		_color.b = cubicwave8(_count % BYTE_MAX);
+	}
+}
+
+/*
+ * rgbSine()
+ * 
+ * Pulses through a sine wave in red, green, and blue
+ * 
+ * 	_count		0
+ *  _step		  3
+ *  _max		  768
+ * 	_overflow	0
+ * 	_wait		  10
+ */
+void LedStrip::rgbSine()
+{
+	_color = CRGB::Black;
+
+  if(_count < BYTE_MAX)
+  {
+		_color.r = sin8(_count);
+  }
+	else if(_count < 2 * BYTE_MAX)
+	{
+		_color.g = sin8(_count % BYTE_MAX);
+	}
+	else
+	{
+		_color.b = sin8(_count % BYTE_MAX);
 	}
 }
 
@@ -341,15 +434,46 @@ void LedStrip::setState(strip_state_t state)
     case RAINBOW:
       _state = state;
 
+			_color = CRGB::Red;
+
       delete _timer;
       _timer = new Timer(0,1,BYTE_MAX,0,50);
+      break;
+
+		case RGB_TRI:
+      _state = state;
+
+			_color = CRGB::Black;
+
+      delete _timer;
+      _timer = new Timer(0,3,3 * BYTE_MAX,0,10);
+      break;
+
+		case RGB_QUAD:
+      _state = state;
+
+			_color = CRGB::Black;
+
+      delete _timer;
+      _timer = new Timer(0,3,3 * BYTE_MAX,0,10);
+      break;
+
+		case RGB_CUBIC:
+      _state = state;
+
+			_color = CRGB::Black;
+
+      delete _timer;
+      _timer = new Timer(0,3,3 * BYTE_MAX,0,10);
       break;
 
 		case RGB_SINE:
       _state = state;
 
+			_color = CRGB::Black;
+
       delete _timer;
-      _timer = new Timer(0,1,3 * BYTE_MAX,0,25);
+      _timer = new Timer(0,3,3 * BYTE_MAX,0,10);
       break;
 
     default:
@@ -375,6 +499,18 @@ void LedStrip::update(uint64_t curr_ms)
 
     case RAINBOW:
       rainbow();
+      break;
+
+		case RGB_TRI:
+      rgbTri();
+      break;
+
+		case RGB_QUAD:
+      rgbQuad();
+      break;
+
+		case RGB_CUBIC:
+      rgbCubic();
       break;
 
 		case RGB_SINE:
