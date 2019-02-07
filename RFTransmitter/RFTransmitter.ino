@@ -16,6 +16,9 @@
 #define LOOP_DELAY      1
 #define DEBOUNCE_DELAY  50
 
+#define SIN_OFFSET  193
+#define COS_OFFSET  129
+
 /* Gamma Correction Table */
 const uint8_t PROGMEM gammaTable[] = {
   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -58,6 +61,8 @@ class Timer {
     uint64_t _last;     //Time in milliseconds since the timer last ticked
     
   public:
+    uint64_t _num_overflow; //Number of times the counter has overflowed
+
     Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uint64_t wait);
     ~Timer();
     uint16_t tic(uint64_t curr_ms);
@@ -72,10 +77,10 @@ class Timer {
 typedef enum {
   OFF = 0,
   RAINBOW = 1,
-  RGB_TRI = 2,
-	RGB_QUAD = 3,
-	RGB_CUBIC = 4,
-	RGB_SINE = 5,
+	RGB_SINE = 2,
+  RGB_TRI = 3,
+  RGB_QUAD = 4,
+  RGB_CUBIC = 5,
   NUM_STATES = 6,
 }strip_state_t;
 
@@ -198,6 +203,7 @@ Timer::Timer(uint16_t count, uint16_t step, uint16_t max, uint16_t overflow, uin
   _step = step;
   _max = max;
   _overflow = overflow;
+  _num_overflow = 0;
   _wait = wait;
   _last = millis();
 }
@@ -219,6 +225,7 @@ uint16_t Timer::tic(uint64_t curr_ms)
     if(_count >= _max)
     {
       _count = _overflow;
+      _num_overflow++;
     }
   }
 
@@ -372,18 +379,19 @@ void LedStrip::rgbSine()
 {
 	_color = CRGB::Black;
 
-  if(_count < BYTE_MAX)
+  _color.r = _count;
+  _color.g = LED_MAX - _count;
+
+  int frac = (int) BYTE_MAX / 8;
+  if(_count >= 7 * frac)
   {
-		_color.r = cos8(_count);
+    int num_pulses = 4;
+
+    int count = _count - 7 * frac;
+    count = count % (frac / num_pulses);
+    count = count * 128 / (frac / num_pulses); 
+    _color.r = sin8(count); 
   }
-	else if(_count < 2 * BYTE_MAX)
-	{
-		_color.g = sin8(_count % BYTE_MAX);
-	}
-	else
-	{
-		_color.b = cos8(_count % BYTE_MAX);
-	}
 }
 
 /* 
@@ -473,7 +481,8 @@ void LedStrip::setState(strip_state_t state)
 			_color = CRGB::Black;
 
       delete _timer;
-      _timer = new Timer(0,3,3 * BYTE_MAX,0,10);
+      uint64_t twoMinutes = 120.0 * 1000 / 256;
+      _timer = new Timer(0,1,BYTE_MAX,0,twoMinutes);
       break;
 
     default:
@@ -568,5 +577,3 @@ void readButton()
 
   g_last_button_state = reading;
 }
-
-
