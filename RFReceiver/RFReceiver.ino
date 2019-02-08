@@ -70,7 +70,7 @@ void loop()
     //radio.read(&text, sizeof(text));    //Reading the data
     radio.read(&message, sizeof(message));    //Reading the data
     //You need this delay dont ask me why
-    delay(5);
+    delayMicroseconds(10);
 
     decode(message);
   }
@@ -79,7 +79,7 @@ void loop()
   analogWrite(STRIP_GREEN_PIN, green);
   analogWrite(STRIP_BLUE_PIN, blue);
 
-  delay(5);
+  delayMicroseconds(10);
 } 
 
 void decode(uint32_t message)

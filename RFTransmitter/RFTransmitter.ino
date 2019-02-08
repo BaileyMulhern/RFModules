@@ -85,22 +85,6 @@ class Timer {
 
 };
     
-uint16_t Timer::tic(uint64_t curr_us)
-{
-  if(_step != 0 && curr_us - _last >= _wait)
-  {
-    _last = curr_us;
-    _count += _step;
-
-    if(_count >= _max)
-    {
-      _count = _overflow;
-      _num_overflow++;
-    }
-  }
-
-  return _count;
-}
 
 
 
@@ -152,122 +136,7 @@ class LedStrip {
 //Initialize the number of addresses to 0
 uint8_t LedStrip::s_address_counter = 0;
 
-/* 
- * getAddress()
- *
- * Returns the address of the strip 
- */
-uint8_t LedStrip::getAddress()
-{
-  return _address;
-}
 
-/* 
- * getPacket()
- *
- * Returns the 32 bit RGB color of the strip
- */
-uint32_t LedStrip::getPacket()
-{
-  uint32_t packet = 0;
-
-  packet |= (uint32_t)_color.r << RED_SHIFT;
-  packet |= (uint32_t)_color.g << GREEN_SHIFT;
-  packet |= (uint32_t)_color.b << BLUE_SHIFT;
-
-  return packet;
-}
-
-/*******************************************************
- * Function :serialDump()    
- * Purpose  :Displays useful information about the strip
- * 					 to the serial monitor for debugging purposes
- * Format		:_state    _count    _color
- *******************************************************/
-void LedStrip::serialDump()
-{
-	Serial.print(_state);
-	Serial.print("\t");
-	Serial.print(_count);
-	Serial.print("\t");
-	Serial.print(getPacket());
-	Serial.print("\n");
-}
-
-/* 
- * setState()
- *
- * Transitions the strip to the given state, setting the
- * initial conditions for the state 
- */
-void LedStrip::setState(strip_state_t state)
-{
-  switch (state)
-  {
-    case OFF:
-      _state = state;
-
-      _color = CRGB::Black;
-
-      delete _timer;
-      _timer = new Timer(0,0,0,0,0);
-      break;
-
-    case RAINBOW:
-      _state = state;
-
-			_color = CRGB::Red;
-
-      delete _timer;
-      _timer = new Timer(0,1,BYTE_MAX,0,50 * MS_TO_US);
-      break;
-
-    case NUM_STATES:
-    default:
-      break;
-  }
-}
-
-/* 
- * update()
- *
- * Updates the strip based on the current time and state
- */
-void LedStrip::update(uint64_t curr_us)
-{
-	//Update the current counter value
-	_count = _timer->tic(curr_us);
-
-	//Run the effect method corresponding to the current state
-  switch (_state)
-  {
-    case OFF:
-      break;
-
-    case RAINBOW:
-      _color = rainbow(_count);
-      break;
-
-		case NUM_STATES:
-    default:
-      break;
-  }
-}
-
-
-
-// Helper Functions
-void serialDump();
-void sendMessage(uint8_t address, uint32_t message);
-void readButton();
-
-// Color Functions
-CRGB rainbow(uint8_t count);
-// void rainbow();
-// void rgbTri();
-// void rgbQuad();
-// void rgbCubic();
-// void rgbSine();
 
 //Initialize the RF module
 RF24 radio(CE_PIN, CSN_PIN); 
@@ -283,6 +152,13 @@ boolean g_curr_button_state = 0;  //Current button state
 boolean g_last_button_state = 0;  //Previous button state
 boolean g_button_unpressed = 0;   //Flag for when the button has been unpressed
 uint64_t g_last_button_debounce;  //Milliseconds since the button was last debounced
+
+// Helper Functions
+void sendMessage(uint8_t address, uint32_t message);
+void readButton();
+
+// Color Functions
+CRGB rainbow(uint8_t count);
 
 
 
@@ -305,7 +181,9 @@ void setup()
 }
 
 void loop()
-{ 
+{
+  asm ("loop_label:");
+
   //Update the current time 
   g_curr_us = micros();
 
@@ -337,6 +215,56 @@ void loop()
 }
 
 
+
+/* 
+ * sendMessage()
+ *
+ * Sends the given package to the given address
+ */
+void sendMessage(uint8_t address, uint32_t message)
+{
+  radio.openWritingPipe(address_book[address]);
+  radio.write(&message, sizeof(message)); 
+}
+
+/* 
+ * readButton()
+ *
+ * Reads the state of the button with debounce, tripping 
+ * the unpressed flag if the button goes from pressed to
+ * unpressed
+ */
+void readButton()
+{
+  boolean reading = digitalRead(BUTTON_PIN);
+
+  if (reading != g_last_button_state) 
+  {
+    g_last_button_debounce = millis();
+  }
+
+  if ((millis() - g_last_button_debounce) > DEBOUNCE_DELAY) 
+  {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading != g_curr_button_state) 
+    {
+      g_curr_button_state = reading;
+
+      //If the button was pressed and now is unpressed, then set the g_button_unpressed flag
+      g_button_unpressed = !g_curr_button_state;
+      if(g_button_unpressed)
+      {
+        asm volatile (" jmp loop_label");
+        Serial.println("Dont see me");
+      }
+    }
+  }
+
+  g_last_button_state = reading;
+}
 
 /*******************************************************
  * Function :rainbow()    
@@ -422,47 +350,127 @@ CRGB rainbow(uint8_t count)
 //   }
 // }
 
-/* 
- * sendMessage()
- *
- * Sends the given package to the given address
- */
-void sendMessage(uint8_t address, uint32_t message)
+
+/*******************************************************
+ * Function :tic()    
+ * Purpose  :Updates the timer based on the given time
+ *           in microseconds and returns the count
+ *******************************************************/
+uint16_t Timer::tic(uint64_t curr_us)
 {
-  radio.openWritingPipe(address_book[address]);
-  radio.write(&message, sizeof(message)); 
-}
-
-/* 
- * readButton()
- *
- * Reads the state of the button with debounce, tripping 
- * the unpressed flag if the button goes from pressed to
- * unpressed
- */
-void readButton()
-{
-  boolean reading = digitalRead(BUTTON_PIN);
-
-  if (reading != g_last_button_state) 
+  if(_step != 0 && curr_us - _last >= _wait)
   {
-    g_last_button_debounce = millis();
-  }
+    _last = curr_us;
+    _count += _step;
 
-  if ((millis() - g_last_button_debounce) > DEBOUNCE_DELAY) 
-  {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
-
-    // if the button state has changed:
-    if (reading != g_curr_button_state) 
+    if(_count >= _max)
     {
-      g_curr_button_state = reading;
-
-      //If the button was pressed and now is unpressed, then set the g_button_unpressed flag
-      g_button_unpressed = !g_curr_button_state;
+      _count = _overflow;
+      _num_overflow++;
     }
   }
 
-  g_last_button_state = reading;
+  return _count;
+}
+
+/* 
+ * getAddress()
+ *
+ * Returns the address of the strip 
+ */
+uint8_t LedStrip::getAddress()
+{
+  return _address;
+}
+
+/* 
+ * getPacket()
+ *
+ * Returns the 32 bit RGB color of the strip
+ */
+uint32_t LedStrip::getPacket()
+{
+  uint32_t packet = 0;
+
+  packet |= (uint32_t)_color.r << RED_SHIFT;
+  packet |= (uint32_t)_color.g << GREEN_SHIFT;
+  packet |= (uint32_t)_color.b << BLUE_SHIFT;
+
+  return packet;
+}
+
+/*******************************************************
+ * Function :serialDump()    
+ * Purpose  :Displays useful information about the strip
+ * 					 to the serial monitor for debugging purposes
+ * Format		:_state    _count    _color
+ *******************************************************/
+void LedStrip::serialDump()
+{
+	Serial.print(_state);
+	Serial.print("\t");
+	Serial.print(_count);
+	Serial.print("\t");
+	Serial.print(getPacket());
+	Serial.print("\n");
+}
+
+/* 
+ * setState()
+ *
+ * Transitions the strip to the given state, setting the
+ * initial conditions for the state 
+ */
+void LedStrip::setState(strip_state_t state)
+{
+  switch (state)
+  {
+    case OFF:
+      _state = state;
+
+      _color = CRGB::Black;
+
+      delete _timer;
+      _timer = new Timer(0,0,0,0,0);
+      break;
+
+    case RAINBOW:
+      _state = state;
+
+			_color = CRGB::Red;
+
+      delete _timer;
+      _timer = new Timer(0,1,BYTE_MAX,0,100.0 * MS_TO_US);
+      break;
+
+    case NUM_STATES:
+    default:
+      break;
+  }
+}
+
+/* 
+ * update()
+ *
+ * Updates the strip based on the current time and state
+ */
+void LedStrip::update(uint64_t curr_us)
+{
+	//Update the current counter value
+	_count = _timer->tic(curr_us);
+
+	//Run the effect method corresponding to the current state
+  switch (_state)
+  {
+    case OFF:
+      break;
+
+    case RAINBOW:
+      _color = rainbow(_count);
+      break;
+
+		case NUM_STATES:
+    default:
+      break;
+  }
 }
