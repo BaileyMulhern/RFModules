@@ -13,9 +13,11 @@
 #define BYTES_PER_ADDRESS 6
 #define SERIAL_BAUD 115200
 
-#define NUM_NODES 5
+#define MAX_RETRIES 15
 
 #define NO_WAIT 0
+
+#define MS_TO_S 1000
 
 //Commands that can be received over RF
 typedef enum {
@@ -27,10 +29,11 @@ typedef enum {
     kRfCommandNum,      //Number of commands
 } rfCommand;
 
-//List of all effects 
+//List of all effects you can run 
 typedef enum {
     kEffectRainbow, //RGB Rainbow
     kEffectFastRainbow,
+    kEffectHalloween,
     kEffectNum,     //Number of effects available
 } effectList;
 
@@ -43,16 +46,14 @@ typedef struct {
 class RFNode 
 {
     private:
-        uint8_t address[BYTES_PER_ADDRESS];
         uint8_t index;
         static uint8_t node_counter;
-        static const uint8_t kIndexOffset = 2;
-        static const uint8_t kQueueCapacity = 10;
+        static const uint8_t QUEUE_CAPACITY = 10;
 
         uint64_t last_update;
 
-        rfPacket packet_q[kQueueCapacity];
-        uint16_t wait_q[kQueueCapacity];
+        rfPacket packet_q[QUEUE_CAPACITY];
+        uint16_t wait_q[QUEUE_CAPACITY];
         uint8_t q_head;
         uint8_t q_tail;
         uint8_t q_count;
@@ -62,18 +63,86 @@ class RFNode
     public:
         typedef enum {
             kMessageSent,
-            kMessageFailed,
+            kWriteFailed,
+            kAckTimeout,
             kWait,
             kQueueEmpty,
         } updateStatus;
 
         RFNode();
         ~RFNode();
+
         updateStatus update(uint64_t ms);
         bool queueMessage(rfPacket p, uint16_t wait);
         int queueEffect(effectList e, uint16_t wait);
         int queueColor(uint32_t c, uint16_t wait);
 };
+
+
+uint64_t g_millis = 0;
+uint64_t g_last_button_debounce = 0;  
+
+void initRF();
+
+const int NUM_NODES = 2;
+RFNode* nodes;
+
+RF24 radio(CE_PIN, CSN_PIN);
+const uint8_t talk_pipes[][BYTES_PER_ADDRESS] = {"1Talk", "2Talk", "3Talk", "4Talk", "5Talk"};
+const uint8_t read_pipes[][BYTES_PER_ADDRESS] = {"1Read", "2Read", "3Read", "4Read", "5Read"};
+
+const int DEMO_NUM = 3;
+int demo_counter = 0;
+
+rfPacket demo_reel[DEMO_NUM] = {
+    {kRfCommandEffect, kEffectRainbow},
+    {kRfCommandEffect, kEffectFastRainbow},
+    {kRfCommandEffect, kEffectHalloween},
+};
+
+void setup() 
+{
+    //Setup the button
+    pinMode(BUTTON_PIN, INPUT);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), ButtonISR, FALLING);
+
+    nodes = (RFNode *)calloc(NUM_NODES, sizeof(RFNode));
+    initRF();
+
+    //Start serial line
+    Serial.begin(SERIAL_BAUD);
+}
+
+void loop()
+{
+    g_millis = millis();
+
+    for (int i = 0; i < NUM_NODES; i++)
+    {
+        nodes[i].update(g_millis);
+    }
+
+    delayMicroseconds(LOOP_DELAY);
+}
+
+void initRF()
+{
+    /* Start the radio */
+    radio.begin();
+    radio.setAutoAck(true);
+    radio.enableAckPayload();
+    radio.enableDynamicPayloads();
+    radio.setRetries(0, MAX_RETRIES);
+
+    // Open writing pipe for all nodes
+    for(int i = 0; i < NUM_NODES; i++)
+    {
+        radio.openReadingPipe(i + 1, (uint64_t)read_pipes[i]);
+    }
+
+    radio.setPALevel(RF24_PA_MIN); 
+    radio.startListening();
+}
 
 RFNode::RFNode()
 {
@@ -81,13 +150,7 @@ RFNode::RFNode()
     q_tail = 0;
     q_count = 0;
 
-    index = kIndexOffset + node_counter++;
-
-    address[0] = index + '0';
-    address[1] = 'N';
-    address[2] = 'o';
-    address[3] = 'd';
-    address[4] = 'e';
+    index = node_counter++;
 }
 
 RFNode::~RFNode()
@@ -104,7 +167,7 @@ bool RFNode::dequeue()
     }
 
     noInterrupts();
-    q_head = ++q_head % kQueueCapacity;
+    q_head = ++q_head % QUEUE_CAPACITY;
     q_count--;
     interrupts();
 
@@ -123,6 +186,17 @@ RFNode::updateStatus RFNode::update(uint64_t ms)
     if(ms - last_update >= wait_q[q_head])
     {
         /* TODO: Send rfPacket over rf */
+        radio.stopListening();
+        radio.openWritingPipe(talk_pipes[index]);
+
+        //Return if the message sending failed
+        if(!radio.write(&packet_q[q_head], sizeof(rfPacket)))
+        {
+            radio.startListening();
+            return kWriteFailed;
+        }
+
+        radio.startListening();
 
         last_update = ms;
         dequeue();
@@ -137,7 +211,7 @@ RFNode::updateStatus RFNode::update(uint64_t ms)
 bool RFNode::queueMessage(rfPacket p, uint16_t wait = NO_WAIT)
 {
     //Return false if queue is at capacity
-    if(q_count == kQueueCapacity)
+    if(q_count == QUEUE_CAPACITY)
     {
         return false;
     }
@@ -148,72 +222,13 @@ bool RFNode::queueMessage(rfPacket p, uint16_t wait = NO_WAIT)
     packet_q[q_tail].command = p.command;
     packet_q[q_tail].data = p.data;
 
-    q_tail = ++q_tail % kQueueCapacity;
+    q_tail = ++q_tail % QUEUE_CAPACITY;
     q_count++;
 
     interrupts();
 
     //Operation returns successfully
     return true;
-}
-
-RF24 radio(CE_PIN, CSN_PIN);
-const uint8_t master_address[BYTES_PER_ADDRESS] = "1Node";
-
-uint64_t g_millis = 0;
-uint64_t g_last_button_debounce = 0;  
-
-void initRF();
-
-RFNode nodes[] = {
-
-};
-
-void setup() 
-{
-    //Setup the button
-    pinMode(BUTTON_PIN, INPUT);
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), ButtonISR, FALLING);
-
-    initRF();
-
-    //Start serial line
-    Serial.begin(SERIAL_BAUD);
-}
-
-void loop()
-{
-    g_millis = millis();
-
-    for (RFNode n : nodes)
-    {
-        n.update(g_millis);
-    }
-
-    delayMicroseconds(LOOP_DELAY);
-}
-
-void initRF()
-{
-    /* TODO */
-
-    // /* Start the radio */
-    // radio.begin();
-    // radio.setAutoAck(1);
-    // radio.enableAckPayload();
-    // radio.enableDynamicPayloads();
-    // radio.setRetries(0, MAX_RETRIES);
-    // radio.setPayloadSize(1);
-
-    // /* Set the address of the radio */
-    // uint8_t address[6] = "2Node";
-    // address[0] = node_index + '0';
-    // radio.openReadingPipe(READING_PIPE, address);  
-
-    // /* Open the writing pipe on 0 to master */
-    // radio.openWritingPipe(master_address);
-    // radio.setPALevel(RF24_PA_MIN); 
-    // radio.startListening();
 }
 
 /* ---------------------------------------------------------------------------------------------------- 
@@ -226,6 +241,11 @@ void ButtonISR(void)
     {
         g_last_button_debounce = millis();
         
-        /* TODO */
+        for(int i = 0; i < NUM_NODES; i++)
+        {
+            nodes[i].queueMessage(demo_reel[demo_counter], NO_WAIT);
+        }               
+        
+        demo_counter = ++demo_counter % DEMO_NUM;
     }
 }

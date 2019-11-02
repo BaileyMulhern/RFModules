@@ -18,6 +18,7 @@
 
 #include <FastLED.h>
 
+
 /* Arduino Init Parameters */
 #define SERIAL_BAUD     115200
 /* Pin Definitions */
@@ -53,12 +54,16 @@
 #define RED             0x00FF0000U
 #define GREEN           0x0000FF00U
 #define BLUE            0x000000FFU
+#define ORANGE          0x00FF7F00U
+#define PURPLE          0x00FF00FFU
 
 /* Effect Macros */
 #define ONE_COLOR_COUNT_MAX     255
 #define TWO_COLOR_COUNT_MAX     511
 #define THREE_COLOR_COUNT_MAX   767
 #define FOUR_COLOR_COUNT_MAX    1023
+#define SINE_MAX                255
+#define HALLOWEEN_MAX           511
 
 /**************************************************
  *              Global Enumerations 
@@ -91,14 +96,6 @@ typedef enum {
     kNodeStateNum,
 } nodeState;
 
-//List of all effects you can run 
-typedef enum {
-    kEffectRainbow, //RGB Rainbow
-    kEffectFastRainbow,
-    kEffectNum,     //Number of effects available
-} effectList;
-
-
 /**************************************************
  *          Global Variables & Objects 
  **************************************************/
@@ -127,63 +124,10 @@ typedef struct {
     uint32_t data;      //Color or effect data
 } rfPacket;
 
-//Struct for packing effect configuration settings
-typedef struct {
-    uint16_t count;             //Counter
-    const uint16_t count_max;   //Max value that count can have before returning to 0
-    const uint16_t step;        //Amount by which count increments
-    const uint16_t wait;        //Wait time between incrementing counter
-    uint64_t time;              //Current time in ms or us
-    uint64_t last;              //Time since count was incremented
-    const bool use_ms;          //If true, time units are ms; otherwise, in micros
-} effectConfig;
-
-typedef void (*effectFunc)(const effectConfig &config_p);
-
-//Struct that represents each different effect
-typedef struct {
-    effectList name;
-    effectConfig config;
-    effectFunc runEffect;
-} effectStruct;
-
-/* ADD EFFECT FUNCTIONS HERE */
-
-void effectRainbow(const effectConfig &config_p);
-
-/* ADD EFFECTS HERE */
-
-effectStruct rainbow = {
-    kEffectRainbow, //name
-    {               //config 
-        0,                      // count
-        THREE_COLOR_COUNT_MAX,  // count_max
-        1,                      // step
-        30,                     // wait
-        0,                      // time
-        0,                      // last
-        true,                   // use_ms
-    },
-    effectRainbow,  //runEffect
-};
-
-effectStruct fastRainbow = {
-    kEffectFastRainbow, //name
-    {                   //config 
-        0,                      // count
-        THREE_COLOR_COUNT_MAX,  // count_max
-        4,                      // step
-        15,                      // wait
-        0,                      // time
-        0,                      // last
-        true,                   // use_ms
-    },
-    effectRainbow,      //runEffect
-};
-
 effectStruct *effects[] = {
     &rainbow,
     &fastRainbow,
+    &halloween,
 };
 
 /**************************************************
@@ -219,10 +163,10 @@ void setup()
 
     initRF();
 
-    Serial.begin(SERIAL_BAUD);
+    //Serial.begin(SERIAL_BAUD);
 
     //TEST SETTINGS
-    effect = kEffectFastRainbow;
+    effect = kEffectHalloween;
     state = kNodeStateEffect;
     //red = 255;
     //green = 255;
@@ -233,7 +177,7 @@ void setup()
 void loop()
 {
     /* Read In Command From RF and update state */
-    readRF();
+    //readRF();
 
     /* Update LED strip based on current state */
     updateLights();
@@ -466,31 +410,3 @@ void unpackColor(uint32_t c, uint8_t &r, uint8_t &g, uint8_t &b)
 
 }*/
 
-void effectRainbow(const effectConfig &config_p)
-{
-    int count = config_p.count;
-
-    // R -> G
-    if(count <= ONE_COLOR_COUNT_MAX)
-    {
-        red = ONE_COLOR_COUNT_MAX - count;
-        green = count;
-        blue = 0;
-    }
-    // G -> B
-    else if(count <= TWO_COLOR_COUNT_MAX)
-    {
-        count -= (ONE_COLOR_COUNT_MAX + 1);
-        red = 0;
-        green = ANALOG_PIN_MAX - count;
-        blue = count;
-    }
-    // B -> R
-    else if(count <= THREE_COLOR_COUNT_MAX)
-    {
-        count -= (TWO_COLOR_COUNT_MAX + 1);
-        red = count;
-        green = 0;
-        blue = ANALOG_PIN_MAX - count;
-    }
-}
