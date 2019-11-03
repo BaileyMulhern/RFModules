@@ -96,6 +96,15 @@ typedef enum {
     kNodeStateNum,
 } nodeState;
 
+//List of all effects you can run 
+typedef enum {
+    kEffectRainbow, //RGB Rainbow
+    kEffectFastRainbow,
+    kEffectHalloween,
+    kEffectNum,     //Number of effects available
+} effectList;
+
+
 /**************************************************
  *          Global Variables & Objects 
  **************************************************/
@@ -123,6 +132,75 @@ typedef struct {
     rfCommand command;  //Command to update state
     uint32_t data;      //Color or effect data
 } rfPacket;
+
+//Struct for packing effect configuration settings
+typedef struct {
+    uint16_t count;             //Counter
+    const uint16_t count_max;   //Max value that count can have before returning to 0
+    const uint16_t step;        //Amount by which count increments
+    const uint16_t wait;        //Wait time between incrementing counter
+    uint64_t time;              //Current time in ms or us
+    uint64_t last;              //Time since count was incremented
+    const bool use_ms;          //If true, time units are ms; otherwise, in micros
+} effectConfig;
+
+typedef void (*effectFunc)(const effectConfig &config_p);
+
+//Struct that represents each different effect
+typedef struct {
+    effectList name;
+    effectConfig config;
+    effectFunc runEffect;
+} effectStruct;
+
+/* ADD EFFECT FUNCTIONS HERE */
+
+void effectRainbow(const effectConfig &config_p);
+void effectHalloween(const effectConfig &config_p);
+
+/* ADD EFFECTS HERE */
+
+effectStruct rainbow = {
+    kEffectRainbow, //name
+    {               //config 
+        0,                      // count
+        THREE_COLOR_COUNT_MAX,  // count_max
+        1,                      // step
+        30,                     // wait
+        0,                      // time
+        0,                      // last
+        true,                   // use_ms
+    },
+    effectRainbow,  //runEffect
+};
+
+effectStruct fastRainbow = {
+    kEffectFastRainbow, //name
+    {                   //config 
+        0,                      // count
+        THREE_COLOR_COUNT_MAX,  // count_max
+        4,                      // step
+        15,                      // wait
+        0,                      // time
+        0,                      // last
+        true,                   // use_ms
+    },
+    effectRainbow,      //runEffect
+};
+
+effectStruct halloween = {
+    kEffectHalloween, //name
+    {                   //config 
+        0,                      // count
+        HALLOWEEN_MAX,          // count_max
+        1,                      // step
+        25,                     // wait
+        0,                      // time
+        0,                      // last
+        true,                   // use_ms
+    },
+    effectHalloween,      //runEffect
+};
 
 effectStruct *effects[] = {
     &rainbow,
@@ -409,4 +487,54 @@ void unpackColor(uint32_t c, uint8_t &r, uint8_t &g, uint8_t &b)
     next = (index < length) ? index + 1 : 0;
 
 }*/
+
+void effectRainbow(const effectConfig &config_p)
+{
+    int count = config_p.count;
+
+    // R -> G
+    if(count <= ONE_COLOR_COUNT_MAX)
+    {
+        red = ONE_COLOR_COUNT_MAX - count;
+        green = count;
+        blue = 0;
+    }
+    // G -> B
+    else if(count <= TWO_COLOR_COUNT_MAX)
+    {
+        count -= (ONE_COLOR_COUNT_MAX + 1);
+        red = 0;
+        green = ANALOG_PIN_MAX - count;
+        blue = count;
+    }
+    // B -> R
+    else if(count <= THREE_COLOR_COUNT_MAX)
+    {
+        count -= (TWO_COLOR_COUNT_MAX + 1);
+        red = count;
+        green = 0;
+        blue = ANALOG_PIN_MAX - count;
+    }
+}
+
+void effectHalloween(const effectConfig &config_p)
+{
+    int count = config_p.count;
+
+    // Wave Orange
+    if(count <= SINE_MAX)
+    {
+        red = quadwave8(count);
+        green = 1.0 * quadwave8(count) * (ORANGE >> GREEN_SHIFT) / ANALOG_PIN_MAX;
+        blue = 0;
+    }
+    // Wave Purple
+    else
+    {
+        count -= (ANALOG_PIN_MAX + 1);
+        red = quadwave8(count);
+        green = 0;
+        blue = quadwave8(count);
+    }
+}
 
